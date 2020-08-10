@@ -11,8 +11,6 @@ using System.Linq;
 using Neo.Wallets;
 using Microsoft.AspNetCore.Http;
 using Neo.Network.P2P.Payloads;
-using System.Threading.Tasks;
-using MongoDB.Bson.Serialization;
 
 namespace Neo.Plugins
 {
@@ -111,13 +109,24 @@ namespace Neo.Plugins
 
             var filter = builder.And(filters);
             var sort = Builders<BsonDocument>.Sort.Ascending("block_index");
-            var blockIds = collection.Distinct<ulong>("block_index", filter).ToList().OrderBy(x => x);
+            //var blockIds = collection.Distinct<ulong>("block_index", filter);//.ToDictionary(x => x.).OrderBy(x => x);
+            var blockIds = new Dictionary<ulong,string>();
+
+            collection.Aggregate().Group(new BsonDocument("_id", new BsonDocument {
+                                                                                        {"block_index", "$block_index"},
+                                                                                        {"block_hash", "$block_hash"}
+                                                                                  })).ToList().ForEach(
+                doc =>  { 
+                            var data = doc["_id"];
+                            blockIds.Add((ulong)data["block_index"].AsInt32, data["block_hash"].AsString);
+                        });
 
             var objects = new JArray();
-            foreach (var id in blockIds)
+            foreach (var entry in blockIds)
             {
                 JObject item = new JObject();
-                item["block_index"] = id;
+                item["block_index"] = entry.Key;
+                item["block_hash"] = entry.Value;
 
                 objects.Add(item);
             }
