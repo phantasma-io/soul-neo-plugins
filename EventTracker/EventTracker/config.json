@@ -1,0 +1,26 @@
+﻿{
+  "PluginConfiguration": {
+    "MongoHost": "127.0.0.1",
+    "MongoPort": "27017",
+    "MongoUser": "",
+    "MongoPass": "",
+    "Contracts": [
+      {
+        "Scripthash": "ed07cffad18f1308db51920d99a2af60ac66a7b3",
+        "Actions": [
+          {
+            "OnNotification": "transfer",
+            "Action": "create",
+            "Collection": "transfers",
+            "Keyindex": -1,
+            "Schema": [
+              {"Name": "from_address", "Type": "address"},
+              {"Name": "to_address", "Type": "address"},
+              {"Name": "amount", "Type": "integer"}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
