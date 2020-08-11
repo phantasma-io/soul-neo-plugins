@@ -109,20 +109,18 @@ namespace Neo.Plugins
 
             var filter = builder.And(filters);
             var sort = Builders<BsonDocument>.Sort.Ascending("block_index");
-            //var blockIds = collection.Distinct<ulong>("block_index", filter);//.ToDictionary(x => x.).OrderBy(x => x);
             var blockIds = new Dictionary<ulong,string>();
-
-            collection.Aggregate().Group(new BsonDocument("_id", new BsonDocument {
-                                                                                        {"block_index", "$block_index"},
-                                                                                        {"block_hash", "$block_hash"}
-                                                                                  })).ToList().ForEach(
-                doc =>  { 
-                            var data = doc["_id"];
-                            blockIds.Add((ulong)data["block_index"].AsInt32, data["block_hash"].AsString);
-                        });
+            collection.Aggregate().Match(filter).Group(new BsonDocument("_id",
+                        new BsonDocument { {"block_index", "$block_index"}, {"block_hash", "$block_hash"} }
+                        )
+                    )
+                    .ToList().ForEach( doc =>  { 
+                           var data = doc["_id"];
+                           blockIds.Add((ulong)data["block_index"].AsInt32, data["block_hash"].AsString);
+                       });
 
             var objects = new JArray();
-            foreach (var entry in blockIds)
+            foreach (var entry in blockIds.OrderBy(x => x.Key))
             {
                 JObject item = new JObject();
                 item["block_index"] = entry.Key;
