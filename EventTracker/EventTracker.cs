@@ -11,6 +11,7 @@ using System.Linq;
 using Neo.Wallets;
 using Microsoft.AspNetCore.Http;
 using Neo.Network.P2P.Payloads;
+using Neo.Cryptography;
 
 namespace Neo.Plugins
 {
@@ -87,6 +88,7 @@ namespace Neo.Plugins
                 height = 0;
             }
 
+
             var db = client.GetDatabase(hash);
             if (db == null) 
             {
@@ -117,6 +119,26 @@ namespace Neo.Plugins
                     .ToList().ForEach( doc =>  { 
                            var data = doc["_id"];
                            blockIds.Add((ulong)data["block_index"].AsInt32, data["block_hash"].AsString);
+                       });
+
+            // asset db
+            db = client.GetDatabase("assets");
+            if (db == null) 
+            {
+                return JObject.Parse("assets database not available");
+            }
+            collection = db.GetCollection<BsonDocument>("transfers");
+            collection.Aggregate().Match(filter).Group(new BsonDocument("_id",
+                        new BsonDocument { {"block_index", "$block_index"}, {"block_hash", "$block_hash"} }
+                        )
+                    )
+                    .ToList().ForEach( doc =>  { 
+                            var data = doc["_id"];
+                            var blockIndex = (ulong)data["block_index"].AsInt32;
+                            if (!blockIds.ContainsKey(blockIndex))
+                            {
+                                blockIds.Add(blockIndex, data["block_hash"].AsString);
+                            }
                        });
 
             var objects = new JArray();
@@ -187,8 +209,6 @@ namespace Neo.Plugins
             // to debug
             //var documentSerializer = BsonSerializer.SerializerRegistry.GetSerializer<BsonDocument>();
             //var renderedFilter = filter.Render(documentSerializer, BsonSerializer.SerializerRegistry).ToString();
-            //Console.WriteLine("filter: ");
-            //Console.WriteLine(renderedFilter);
 
             var sort = Builders<BsonDocument>.Sort.Ascending("block_index");
             var transfers = collection.Find(filter).Sort(sort).ToList();
@@ -232,6 +252,61 @@ namespace Neo.Plugins
             options.IsUpsert = true;
             collection.ReplaceOne(filter, doc, options);
 
+            //var targetAddress = "AbFdbvacCeBrncvwYnPEtfKqyr5KU9SWAU"; //TODO do not hardcode
+
+            foreach (var tx in snapshot.PersistingBlock.Transactions)
+            {
+                if (tx.Type != TransactionType.ContractTransaction)
+                {
+                    continue;
+                }
+
+                UInt160 sender = null;
+                if (tx.Witnesses.Length > 0)
+                {
+                    sender = tx.Witnesses[0].ScriptHash;
+                }
+
+                foreach (AssetConfig assetConfig in Settings.Default.AssetConfigs)
+                {
+                    var scriptHashBA = new byte[20];
+                    Array.Copy(assetConfig.Address.Base58CheckDecode(), 1, scriptHashBA, 0, 20);
+                    var scriptHash = new UInt160(scriptHashBA);
+
+                    Fixed8 sum = Fixed8.FromDecimal(0);
+                    UInt256 assetId = null;
+                    UInt160 receiver = null;
+
+                    foreach (var output in tx.Outputs)
+                    {
+                        if (output.ScriptHash == sender)
+                        {
+                            continue;
+                        }
+
+                        assetId = output.AssetId;
+                        var configuredAsset = new UInt256(Neo.Helper.HexToBytes(assetConfig.ScriptHash).Reverse().ToArray());
+
+                        if (assetId == configuredAsset && scriptHash == output.ScriptHash)
+                        {
+                            if (receiver == null)
+                            {
+                                receiver = output.ScriptHash;
+                            }
+
+                            sum = sum + output.Value;
+                        }
+                    }
+                    var decSum = (decimal)sum;
+
+                    if (decSum > 0 && assetId != null)
+                    {
+                        HandleUtxoTransfer(height, hash.ToString(), tx.Attributes, tx.Hash.ToString(),
+                            assetId.ToString(), sender.ToAddress(), receiver.ToAddress(), decSum, assetConfig.Actions);
+                    }
+                }
+            }
+
             foreach (var appExec in applicationExecutedList)
             {
                 var attributes = appExec.Transaction.Attributes;
@@ -249,11 +324,55 @@ namespace Neo.Plugins
                                 if (contract.Contains(h.Scripthash))
                                 {
                                     JObject notification = q.State.ToParameter().ToJson();
-                                    HandleNotification(height, hash.ToString(), attributes, txid, h.Scripthash, notification["value"] as JArray, h.Actions);
+                                    HandleNotification(height, hash.ToString(), attributes, txid, h.Scripthash,
+                                            notification["value"] as JArray, h.Actions);
                                 }
                             }
                         }
                     }
+                }
+            }
+        }
+
+        private void HandleUtxoTransfer(ulong height, string blockHash, TransactionAttribute[] attributes, string txid,
+                string Scripthash, string sender, string receiver,  decimal amount, MongoAction[] actions)
+        {
+            foreach (MongoAction a in actions)
+            {
+                JObject record = new JObject();
+                JArray attr = new JArray();
+
+                foreach (var attribute in attributes)
+                {
+                    attr.Add(attribute.ToJson());
+                }
+
+                string idxKey = "";
+
+                if (a.Keyindex > 0)
+                {
+                    record["refid"] = idxKey;
+                }
+
+                record["from_address"] = sender;
+                record["to_address"] = receiver;
+                record["amount"] = (double)amount;
+                record["txid"] = txid;
+                record["block_index"] = height;
+                record["block_hash"] = blockHash;
+                record["attributes"] = attr;
+
+                BsonDocument doc = BsonDocument.Parse(record.ToString());
+                var db = client.GetDatabase("assets");
+                var collection = db.GetCollection<BsonDocument>(a.Collection);
+                if (a.Action == "create")
+                {
+                    collection.InsertOne(doc);
+                }
+                else if (a.Action == "delete")
+                {
+                    var filter = Builders<BsonDocument>.Filter.Eq("refid", idxKey);
+                    collection.DeleteOne(filter);
                 }
             }
         }

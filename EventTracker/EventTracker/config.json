@@ -21,6 +21,42 @@
           }
         ]
       }
+    ],
+    "Assets": [
+      {
+        "Scripthash": "602c79718b16e442de58778e148d0b1084e3b2dffd5de6b7b16cee7969282de7",
+        "Address": "AbFdbvacCeBrncvwYnPEtfKqyr5KU9SWAU",
+        "Actions": [
+          {
+            "OnNotification": "transfer",
+            "Action": "create",
+            "Collection": "transfers",
+            "Keyindex": -1,
+            "Schema": [
+              {"Name": "from_address", "Type": "address"},
+              {"Name": "to_address", "Type": "address"},
+              {"Name": "amount", "Type": "integer"}
+            ]
+          }
+        ]
+      },
+      {
+        "Scripthash": "c56f33fc6ecfcd0c225c4ab356fee59390af8560be0e930faebe74a6daff7c9b",
+        "Address": "AbFdbvacCeBrncvwYnPEtfKqyr5KU9SWAU",
+        "Actions": [
+          {
+            "OnNotification": "transfer",
+            "Action": "create",
+            "Collection": "transfers",
+            "Keyindex": -1,
+            "Schema": [
+              {"Name": "from_address", "Type": "address"},
+              {"Name": "to_address", "Type": "address"},
+              {"Name": "amount", "Type": "integer"}
+            ]
+          }
+        ]
+      }
     ]
   }
 }
